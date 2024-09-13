@@ -1,0 +1,6 @@
+PriceStr : 0.1
+ProductionCostStr : 0.05
+DemandStr : 0.1
+
+DecisionsName:[WarehouseDecision, ContractDecision, ProductionDecision]
+Decisions : [0,0,0]

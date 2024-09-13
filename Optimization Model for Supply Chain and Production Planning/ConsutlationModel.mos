@@ -1,0 +1,1169 @@
+model TomMac
+uses "mmxprs"
+
+! Declare variables from all sets of data
+declarations
+
+  Products:                 set of string
+  Varieties:                set of string
+  Contents:                 set of string
+  ProductReduction:         array(Products) of real
+  OtherIngredientFactor:    array(Products) of real
+  OtherIngredientCost:      array(Products) of real
+  ProductionCost:           array(Products) of real
+  TomatoProperties:         array(Contents,Varieties) of real
+  ProductProperties:        array(Contents, Products) of real
+  StorageCost:              real
+  WarehouseSize:            real
+  NewWarehouseSize:         real
+  NewWarehouseCost:         real
+  NewProductionIncrease:    real
+  NewProductionCost:        real
+
+  NPeriods =                4
+  Periods =                 1..NPeriods
+  PeriodNames:              array(Periods) of string
+  TomatoSupply:             array(Varieties, Periods) of real
+  TomatoCost:               array(Varieties, Periods) of real
+  Demand:                   array(Products) of real
+  SalePrice:                array(Products) of real
+  Contract:                 array(Products) of real
+  ContractPrice:            array(Products) of real
+  NewContract:              array(Products) of real
+  NewContractPrice:         array(Products) of real
+  ProductionLimit:          array(Products) of real
+
+  TomatoProductUsed:        array(Varieties,Products,Periods) of mpvar
+  HoldProducts:             array(Products, Periods) of mpvar
+  SellProducts:             array(Products, Periods) of  mpvar
+
+  NewWarehouseDecision:     mpvar
+  NewContractDecision:      mpvar
+  NewProductionDecision:    mpvar
+
+  NDecisions =              1..3
+  Decisions :               array(NDecisions) of integer
+  DecisionsName:            array(NDecisions) of string
+  PriceStr :                real
+  ProductionCostStr :       real
+  DemandStr :               real
+end-declarations
+
+! Initalize from the each data file
+initializations from "TomMac.dat"
+Products Varieties Contents ProductReduction OtherIngredientFactor OtherIngredientCost ProductionCost
+TomatoProperties ProductProperties StorageCost WarehouseSize NewWarehouseSize NewWarehouseCost NewProductionIncrease NewProductionCost
+end-initializations
+
+initializations from "TomMacQuarters.dat"
+PeriodNames TomatoSupply TomatoCost Demand SalePrice Contract ContractPrice NewContract NewContractPrice ProductionLimit
+end-initializations
+
+! Create decision variables for different stages
+NewWarehouseDecision is_binary
+NewContractDecision is_binary
+NewProductionDecision is_binary
+
+! Stage 1
+
+! Define Mix Contents
+forall(C in Contents, p in Products,n in Periods) do
+MixContents(C,p,n):= sum(v in Varieties)TomatoProperties(C,v)*TomatoProductUsed(v,p,n)
+end-do
+
+! Define Mix
+forall (p in Products, n in Periods) do
+Mix(p,n):= sum(C in Contents)MixContents(C,p,n)
+end-do
+
+! Constrain on Mix Properties
+forall(p in Products, n in Periods, C in Contents) do
+PropertyCS(C,p,n):= MixContents(C,p,n) = ProductProperties(C,p)*Mix(p,n)
+end-do
+
+! Define VarietyUsed
+forall (v in Varieties, n in Periods) do
+VarietiesUsed(v,n):= sum(p in Products)TomatoProductUsed(v,p,n)
+end-do
+
+!Define Make Products
+forall(p in Products, n in Periods) do
+MakeProducts(p,n):= (1+OtherIngredientFactor(p))*ProductReduction(p)*Mix(p,n)
+end-do
+
+
+!!Constraints
+! Contents Constraint
+forall(C in Contents, n in Periods) do
+ContentCS(C,n):=sum(p in Products)ProductProperties(C,p)*Mix(p,n) = sum(v in Varieties)TomatoProperties(C,v)*VarietiesUsed(v,n)
+end-do
+
+forall (n in Periods) do
+! Tomato Availability Constraint
+forall(v in Varieties)AvailabilityCS(v,n):= VarietiesUsed(v,n)<=TomatoSupply(v,n)
+! constraints: contract<= sell <= sell +demand
+forall(p in Products)ContractCS(p,n):=SellProducts(p,n)>=Contract(p)
+forall(p in Products)DemandCS(p,n):= SellProducts(p,n)<=Contract(p)+Demand(p)
+! Hold Products Constraint
+WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize
+! Capacity Constraint
+forall(p in Products)CapacityCS(p,n):=MakeProducts(p,n) <= ProductionLimit(p)
+end-do
+
+! Sell-Hold-Make Constraint
+forall(p in Products, n in Periods)do
+if(n=1)then
+HoldCS1(p,n):=HoldProducts(p,n) = HoldProducts(p,NPeriods)+MakeProducts(p,n)-SellProducts(p,n)
+else
+HoldCS2(p,n):=HoldProducts(p,n) = HoldProducts(p,n-1)+MakeProducts(p,n)-SellProducts(p,n)
+end-if
+end-do
+
+! Define Cost
+forall(n in Periods) do
+PeriodProductionCost(n) := sum(p in Products)((ProductionCost(p)+OtherIngredientCost(p))*MakeProducts(p, n))
+PeriodTomatoCost(n):= sum(v in Varieties)TomatoCost(v,n)*VarietiesUsed(v,n)
+!VarietiesTomatoCost(v):=sum(n in Periods)TomatoCost(v,n)*VarietiesUsed(v,n)
+PeriodStorageCost(n) := sum(p in Products)HoldProducts(p, n)*StorageCost
+end-do
+
+
+! Define Income
+forall(n in Periods)do
+ContractIncome := sum(p in Products)(Contract(p)*ContractPrice(p))
+OtherIncome(n) := sum(p in Products)SalePrice(p)*(SellProducts(p,n)- Contract(p))
+end-do
+
+!Define Total income, cost and profit
+
+
+TotalIncome := sum(n in Periods)(ContractIncome + OtherIncome(n))
+TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n))
+TotalProfit := TotalIncome - TotalCost
+NetProfit := TotalProfit-sum(n in Periods)PeriodStorageCost(n)
+
+! maximise the objective
+maximise(NetProfit)
+
+! Write out results for base case
+writeln
+writeln("Base Case Results:")
+writeln
+writeln("Total Yearly Profit: ", getsol(TotalProfit))
+writeln("Total Yearly Income: ", getsol(TotalIncome))
+writeln("Total Yearly Cost: ", getsol(TotalCost))
+writeln("Net Yearly Profit: ", getsol(NetProfit))
+
+writeln
+forall (v in Varieties, n in Periods) do
+    writeln("During ", PeriodNames(n), ", buy ", getsol(VarietiesUsed(v,n)), " kg of ", v, " tomatoes.")
+end-do
+
+writeln
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", make ", getsol(MakeProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+writeln
+
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", sell ", getsol(SellProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+
+writeln
+forall(n in Periods) do
+writeln("During ", PeriodNames(n), " the warehouse holds ", getsol(sum(p in Products)HoldProducts(p,n)), " products.")
+end-do
+
+! Export results to excel for processings
+fopen("Amount of Each Variety (kg) Used Per Period Stage 1.csv", F_OUTPUT)
+    write("Type of Tomato")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(V in Varieties) do
+        writeln
+        write(Varieties(V))
+        forall(P in Periods) do
+            write(",", getsol(VarietiesUsed(V, P)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Amount of Each Product (kg) Sold Per Period Stage 1.csv", F_OUTPUT)
+    write("Type of Product Sold")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(N in Periods) do
+            write(",", getsol(SellProducts(p, N)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Warehouse Usage for Each Period Stage 1.csv", F_OUTPUT)
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    writeln
+    write("Warehouse Usage")
+    forall(N in Periods) write(",", getsol(sum(p in Products)HoldProducts(p,N)))
+fclose(F_OUTPUT)
+
+fopen("Amount of Each Product (kg) Made Per Period Stage 1.csv", F_OUTPUT)
+    write("Type of Product Made")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(N in Periods) do
+            write(",", getsol(MakeProducts(p, N)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1kg increase capacity 1.csv", F_OUTPUT)
+write("Product", ",")
+  forall (n in Periods) do
+      forall(p in Products) do
+            if (getslack(CapacityCS(p,n)) = 0) then
+                write(PeriodNames(n))
+                writeln
+                writeln(Products(p), ",", getdual(CapacityCS(p,n)))
+            end-if
+        end-do
+  end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 kg increase availability 1.csv", F_OUTPUT)
+    write("Variety")
+   forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    forall(v in Varieties) do
+        writeln
+        write(v)
+       forall(n in Periods) do
+            if (getslack(AvailabilityCS(v,n)) = 0) then
+                write(",", getdual(AvailabilityCS(v,n)))
+            else
+                write(",", "None")
+            end-if
+        end-do
+   end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 kg decrease in contract 1.csv", F_OUTPUT)
+    write("Product")
+   forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(p)
+       forall(n in Periods) do
+            if (getslack(ContractCS(p,n)) = 0) then
+                write(",", getdual(ContractCS(p,n)))
+            else
+                write(",", "None")
+            end-if
+        end-do
+   end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 kg increase in demand 1.csv", F_OUTPUT)
+    write("Product")
+   forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(p)
+       forall(n in Periods) do
+            if (getslack(DemandCS(p,n)) = 0) then
+                write(",", getdual(DemandCS(p,n)))
+            else
+                write(",", "None")
+            end-if
+        end-do
+   end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 unit increase in warehouse 1.csv", F_OUTPUT)
+    write("Season")
+    forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    writeln
+    write("Warehouse Fair Price")
+    forall(n in Periods) do
+        if (getslack(WarehouseCS(n)) = 0) then
+            write(",", getdual(WarehouseCS(n)))
+        else
+            write(",", "None")
+        end-if
+    end-do
+fclose(F_OUTPUT)
+
+!-----------Stage 1 has done--------------Stage 1 has done--------------Stage 1 has done---------------Stage 1 has done---------------Stage 1 has done
+
+!! Stage 2 part 1: Making decisions
+! Adding Strategies and Decision Variable
+!ThreeStages := 3
+!StagesCS := NewWarehouseDecision + NewContractDecision + NewProductionDecision <= ThreeStages
+
+initialisations from "TomMacPlan.dat"
+PriceStr ProductionCostStr DemandStr
+end-initialisations
+
+
+! Define Mix Contents
+forall(c in Contents, p in Products, n in Periods) do
+MixContents(c,p,n) := sum(v in Varieties)TomatoProperties(c,v) * TomatoProductUsed(v,p,n)
+end-do
+
+! Define Mix
+forall (p in Products, n in Periods) do
+Mix(p,n) := sum(c in Contents)MixContents(c,p,n)
+end-do
+
+! Define VarietyUsed
+forall (v in Varieties, n in Periods) do
+VarietiesUsed(v,n) := sum(p in Products)TomatoProductUsed(v,p,n)
+end-do
+
+!Define Make Products
+forall(p in Products, n in Periods) do
+MakeProducts(p,n) := (1 + OtherIngredientFactor(p)) * ProductReduction(p) * Mix(p,n)
+end-do
+
+!!Constraints
+! Constrain on Mix Properties
+forall(p in Products, n in Periods, c in Contents) do
+PropertyCS(c,p,n) := MixContents(c,p,n) = ProductProperties(c,p)*Mix(p,n)
+end-do
+
+! Contents Constraint
+forall(c in Contents, n in Periods) do
+ContentCS(c,n) := sum(p in Products)ProductProperties(c,p) * Mix(p,n) = sum(v in Varieties)TomatoProperties(c,v) * VarietiesUsed(v,n)
+end-do
+
+forall (n in Periods) do
+! Tomato Availability Constraint
+forall(v in Varieties)AvailabilityCS(v,n) := VarietiesUsed(v,n) <= TomatoSupply(v,n)
+! constraints: contract<= sell <= sell +demand
+forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (NewContractDecision * NewContract(p))
+forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (NewContractDecision * NewContract(p))
+! Hold Products Constraint
+WarehouseCS(n) := sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (NewWarehouseDecision * NewWarehouseSize)
+! Capacity Constraint
+forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * NewProductionDecision * (NewProductionIncrease/100)
+end-do
+
+! Sell-Hold-Make Constraint
+forall(p in Products, n in Periods)do
+if(n = 1)then
+HoldCS1(p,n) := HoldProducts(p,n) = HoldProducts(p,NPeriods) + MakeProducts(p,n) - SellProducts(p,n)
+else
+HoldCS2(p,n) := HoldProducts(p,n) = HoldProducts(p,n - 1) + MakeProducts(p,n) - SellProducts(p,n)
+end-if
+end-do
+
+! Define Cost
+forall(n in Periods) do
+PeriodProductionCost(n) := sum(p in Products)(ProductionCost(p) * (1 + ProductionCostStr) + OtherIngredientCost(p)) * MakeProducts(p, n)
+PeriodTomatoCost(n) := sum(v in Varieties)TomatoCost(v,n) * VarietiesUsed(v,n)
+PeriodStorageCost(n) := sum(p in Products)HoldProducts(p, n) * StorageCost
+end-do
+
+! Define Income
+forall(n in Periods)do
+NewContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + NewContractDecision * (NewContract(p) * NewContractPrice(p)))
+OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (NewContractDecision * NewContract(p))))
+end-do
+
+!Define Total income, cost and profit
+MachinaryCost := NewProductionDecision * NewProductionCost
+NewWarehouseCostCS := NewWarehouseDecision * NewWarehouseCost
+TotalIncome := sum(n in Periods)(NewContractIncome + OtherIncome(n)) * (1 + PriceStr)
+TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+TotalProfit := TotalIncome - TotalCost
+NetProfit := TotalProfit - sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+
+! Maximize objective value
+maximise(NetProfit)
+
+! Write out stage 2 results
+writeln
+writeln
+writeln("Stage 2 Results:")
+writeln
+writeln("Total Yearly Profit: ", getsol(TotalProfit))
+writeln("Total Yearly Income: ", getsol(TotalIncome))
+writeln("Total Yearly Cost: ", getsol(TotalCost))
+writeln("Net Yearly Profit: ", getsol(NetProfit))
+
+writeln
+forall (v in Varieties, n in Periods) do
+    writeln("During ", PeriodNames(n), ", buy ", getsol(VarietiesUsed(v,n)), " kg of ", v, " tomatoes.")
+end-do
+
+writeln
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", make ", getsol(MakeProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+writeln
+
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", sell ", getsol(SellProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+
+writeln
+forall(n in Periods) do
+writeln("During ", PeriodNames(n), " the warehouse holds ", getsol(sum(p in Products)HoldProducts(p,n)), " products.")
+end-do
+
+writeln
+writeln("Stage 2 Decision:")
+if getsol(NewWarehouseDecision) = 0 then
+writeln("They do not want to get the new warehouse.")
+elif getsol(NewWarehouseDecision) = 1 then
+writeln("They should get the new warehouse.")
+end-if
+
+if getsol(NewContractDecision) = 0 then
+writeln("They do not want to sign the new contract.")
+elif getsol(NewContractDecision) = 1 then
+writeln("They should sign the new contract.")
+end-if
+
+if getsol(NewProductionDecision) = 0 then
+writeln("They do not want to increase production.")
+elif getsol(NewProductionDecision) = 1 then
+writeln("They should increase production.")
+end-if
+
+! Export results to excel for processings
+fopen("Amount of Each Variety Used Per Period Stage 2.csv", F_OUTPUT)
+    write("Type of Tomato")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(V in Varieties) do
+        writeln
+        write(Varieties(V))
+        forall(P in Periods) do
+            write(",", getsol(VarietiesUsed(V, P)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Amount of Each Product Sold Per Period Stage 2.csv", F_OUTPUT)
+    write("Type of Product Sold")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(N in Periods) do
+            write(",", getsol(SellProducts(p, N)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Other Income for Each Period Stage 2.csv", F_OUTPUT)
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    writeln
+    write("Other Income")
+    forall(N in Periods) write(",", getsol(OtherIncome(N)))
+fclose(F_OUTPUT)
+
+fopen("Warehouse Usage for Each Period Stage 2.csv", F_OUTPUT)
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    writeln
+    write("Warehouse Usage")
+    forall(N in Periods) write(",", getsol(sum(p in Products)HoldProducts(p,N)))
+fclose(F_OUTPUT)
+
+fopen("Amount of Each Product Made Per Period Stage 2.csv", F_OUTPUT)
+    write("Type of Product Made")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(N in Periods) do
+            write(",", getsol(MakeProducts(p, N)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+
+
+!-----------Stage 2 part 1 has done--------------Stage 2 part 1 has done--------------Stage 2 part 1 has done---------------Stage 2 part 1 has done
+
+!! Stage 2 part 2:
+! Consider the change of Tomato Properties with the best Decisions in part 1
+! See the differences between different combinations of decisions
+
+initialisations from "TomMacPlan.dat"
+Decisions DecisionsName
+end-initialisations
+
+Decisions(1):=1
+Decisions(2):=1
+Decisions(3):=0
+
+!!Constraints on Contents
+! Define Mix Contents
+forall(c in Contents, p in Products,n in Periods) do
+MixContents(c,p,n) := sum(v in Varieties)TomatoProperties(c,v) * TomatoProductUsed(v,p,n)
+end-do
+
+!Re-Define Mix
+forall(p in Products, n in Periods) do
+Mix(p,n) := sum(v in Varieties)TomatoProductUsed(v,p,n)
+end-do
+
+!Old Constraints on Contents
+forall(c in Contents, n in Periods) do
+ContentsNeed(c,n) := sum(p in Products)ProductProperties(c,p) * Mix(p,n)
+ContentsUsed(c,n) := sum(v in Varieties)TomatoProperties(c,v) * VarietiesUsed(v,n)
+ContentCS(c,n):=ContentsUsed(c,n) = ContentsNeed(c,n)
+end-do
+
+!Constraint 0.02
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n)
+end-do
+
+! Define VarietyUsed
+forall (v in Varieties, n in Periods) do
+VarietiesUsed(v,n) := sum(p in Products)TomatoProductUsed(v,p,n)
+end-do
+
+!Define Make Products
+forall(p in Products, n in Periods) do
+MakeProducts(p,n) := (1 + OtherIngredientFactor(p)) * ProductReduction(p) * Mix(p,n)
+end-do
+
+!!Constraints
+forall (n in Periods) do
+! Tomato Availability Constraint
+forall(v in Varieties)AvailabilityCS(v,n) := VarietiesUsed(v,n) <= TomatoSupply(v,n)
+! constraints: contract<= sell <= sell +demand
+forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (Decisions(2) * NewContract(p))
+forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (Decisions(2) * NewContract(p))
+! Hold Products Constraint
+WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (Decisions(1)*(NewWarehouseSize))
+! Capacity Constraint
+forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * Decisions(3) * (NewProductionIncrease/100)
+end-do
+
+! Sell-Hold-Make Constraint
+forall(p in Products, n in Periods) do
+if(n = 1)then
+HoldCS1(p,n) := HoldProducts(p,n) = HoldProducts(p,NPeriods) + MakeProducts(p,n) - SellProducts(p,n)
+else
+HoldCS2(p,n) := HoldProducts(p,n) = HoldProducts(p,n - 1) + MakeProducts(p,n) - SellProducts(p,n)
+end-if
+end-do
+
+! Define Cost
+forall(n in Periods) do
+PeriodProductionCost(n) := sum(p in Products)(ProductionCost(p) * (1 + ProductionCostStr) + OtherIngredientCost(p)) * MakeProducts(p, n)
+PeriodTomatoCost(n) := sum(v in Varieties)TomatoCost(v,n) * VarietiesUsed(v,n)
+PeriodStorageCost(n) := sum(p in Products)HoldProducts(p,n) * StorageCost
+end-do
+
+! Define Income
+forall(n in Periods)do
+S2ContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + Decisions(2) * (NewContract(p) * NewContractPrice(p)))
+OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (Decisions(2) * NewContract(p))))
+end-do
+
+!Define Total income, cost and profit
+MachinaryCost := Decisions(3) * NewProductionCost
+NewWarehouseCostCS := Decisions(1) * NewWarehouseCost
+TotalIncome := sum(n in Periods)(S2ContractIncome + OtherIncome(n)) * (1 + PriceStr)
+TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+TotalProfit := TotalIncome - TotalCost
+NetProfit := TotalProfit - sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+
+maximise(NetProfit)
+
+! Display results
+writeln
+writeln
+writeln("Inherited the Decisions from stage 2, but change the mix property. We have following Results:")
+writeln
+writeln("Total Yearly Profit: ", getsol(TotalProfit))
+writeln("Total Yearly Income: ", getsol(TotalIncome))
+writeln("Total Yearly Cost: ", getsol(TotalCost))
+writeln("Net Yearly Profit: ", getsol(NetProfit))
+
+writeln
+forall (v in Varieties, n in Periods) do
+    writeln("During ", PeriodNames(n), ", buy ", getsol(VarietiesUsed(v,n)), " kg of ", v, " tomatoes.")
+end-do
+
+writeln
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", make ", getsol(MakeProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+writeln
+
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", sell ", getsol(SellProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+
+writeln
+forall(n in Periods) do
+writeln("During ", PeriodNames(n), " the warehouse holds ", getsol(sum(p in Products)HoldProducts(p,n)), " products.")
+end-do
+
+! Export results to excel for processings
+
+
+fopen("Increase in profit for 1kg increase capacity 2.csv", F_OUTPUT)
+write("Product", ",")
+  forall (n in Periods) do
+      forall(p in Products) do
+            if (getslack(CapacityCS(p,n)) = 0) then
+                write(PeriodNames(n))
+                writeln
+                writeln(Products(p), ",", getdual(CapacityCS(p,n)))
+            end-if
+        end-do
+  end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 kg increase availability 2.csv", F_OUTPUT)
+    write("Variety")
+   forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    forall(v in Varieties) do
+        writeln
+        write(v)
+       forall(n in Periods) do
+            if (getslack(AvailabilityCS(v,n)) = 0) then
+                write(",", getdual(AvailabilityCS(v,n)))
+            else
+                write(",", "None")
+            end-if
+        end-do
+   end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 kg decrease in contract 2.csv", F_OUTPUT)
+    write("Product")
+   forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(p)
+       forall(n in Periods) do
+            if (getslack(ContractCS(p,n)) = 0) then
+                write(",", getdual(ContractCS(p,n)))
+            else
+                write(",", "None")
+            end-if
+        end-do
+   end-do
+fclose(F_OUTPUT)
+
+fopen("Increase in profit for 1 kg increase in demand 2.csv", F_OUTPUT)
+    write("Product")
+   forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(p)
+       forall(n in Periods) do
+            if (getslack(DemandCS(p,n)) = 0) then
+                write(",", getdual(DemandCS(p,n)))
+            else
+                write(",", "None")
+            end-if
+        end-do
+   end-do
+fclose(F_OUTPUT)
+
+
+fopen("Increase in profit for 1 unit increase in warehouse 2.csv", F_OUTPUT)
+    write("Season")
+    forall (n in Periods) do
+        write(",", PeriodNames(n))
+    end-do
+    writeln
+    write("Warehouse Fair Price")
+    forall(n in Periods) do
+        if (getslack(WarehouseCS(n)) = 0) then
+            write(",", getdual(WarehouseCS(n)))
+        else
+            write(",", "None")
+        end-if
+    end-do
+fclose(F_OUTPUT)
+
+
+
+fopen("New_Mix_Properties_inheritedDV.csv", F_OUTPUT)
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n) + 0.02*Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n) + 0.02*Mix(p,n)
+end-do
+maximise(NetProfit)
+    write("Type of Products")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(n in Periods) do
+        forall(C in Contents) do
+        if getsol(Mix(p,n)) = 0 then
+           if (C = "Solid") then
+           NewProductPropertiesSolid:= ProductProperties(C,p)
+           end-if
+           if (C = "Liquid") then
+           NewProductPropertiesLiquid:=ProductProperties(C,p)
+           end-if
+        elif getsol(Mix(p,n))>0 then
+           NewProductProperties := getsol(MixContents(C,p,n))/getsol(Mix(p,n))
+           if (C = "Solid") then
+           NewProductPropertiesSolid := getsol(MixContents(C,p,n))/getsol(Mix(p,n))
+           end-if
+           if (C = "Liquid") then
+           NewProductPropertiesLiquid := getsol(MixContents(C,p,n))/getsol(Mix(p,n))
+           end-if
+        elif getsol(Mix(p,n))<0 then
+        writeln("somethings is wrong")
+        end-if
+        end-do
+        write(",", round(NewProductPropertiesSolid*100)/100, ":", round(NewProductPropertiesLiquid*100)/100 )
+        end-do
+     end-do
+    writeln
+fclose(F_OUTPUT)
+
+
+fopen("delta_stage2.csv",  F_OUTPUT)
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n)
+end-do
+maximise(NetProfit)
+write("delta,  NetProfit")
+writeln
+
+delta:= 0.000
+
+repeat
+
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n) + delta * Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n) - delta * Mix(p,n)
+end-do
+
+maximize(NetProfit)
+
+write(delta,",", getsol(NetProfit))
+!forall(c in Crops) write(",", getsol(Area(c)))
+writeln
+
+delta += 0.001
+until delta > 0.02
+fclose(F_OUTPUT)
+
+
+! table of comparing Net profit in different decisions
+! Using the fact that not hiring warehosue and signing a contract will result to "Infeasible"
+
+fopen("Net_Profit_with_different_Decisions.csv",F_OUTPUT)
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n)
+end-do
+    Decisions(1):=0
+    Decisions(2):=0
+    Decisions(3):=0
+    write("WarehouseDecision, ContractDecision, ProductionDecision, NetProfit, TotalProfit")
+    writeln
+    writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",", getsol(NetProfit),",", getsol(TotalProfit))
+    forall (d in NDecisions) do
+        Decisions(d):=Decisions(d)+1
+        if (Decisions(1)=0 and Decisions(2)=1) then
+        writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",", "Infeasible","Infeasible")
+        else
+            forall (n in Periods) do
+                forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (Decisions(2) * NewContract(p))
+                forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (Decisions(2) * NewContract(p))
+                WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (Decisions(1)*(NewWarehouseSize))
+                forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * Decisions(3) * (NewProductionIncrease/100)
+                S2ContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + Decisions(2) * (NewContract(p) * NewContractPrice(p)))
+                OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (Decisions(2) * NewContract(p))))
+                MachinaryCost := Decisions(3) * NewProductionCost
+                NewWarehouseCostCS := Decisions(1) * NewWarehouseCost
+                PeriodStorageCost(n) := sum(p in Products)HoldProducts(p,n) * StorageCost
+            end-do
+            TotalIncome := sum(n in Periods)(S2ContractIncome + OtherIncome(n)) * (1 + PriceStr)
+            TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+            NetProfit := TotalIncome - TotalCost- sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+            maximise(NetProfit)
+            writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",", getsol(NetProfit),",", getsol(TotalProfit))
+            if d<3 then
+            if Decisions(1)=0 and Decisions(2)=1 then
+            writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",","Infeasible","Infeasible")
+            else
+                Decisions(d+1):=Decisions(d+1)+1
+                forall (n in Periods) do
+                    forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (Decisions(2) * NewContract(p))
+                    forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (Decisions(2) * NewContract(p))
+                    WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (Decisions(1)*(NewWarehouseSize))
+                    forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * Decisions(3) * (NewProductionIncrease/100)
+                    S2ContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + Decisions(2) * (NewContract(p) * NewContractPrice(p)))
+                    OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (Decisions(2) * NewContract(p))))
+                    MachinaryCost := Decisions(3) * NewProductionCost
+                    NewWarehouseCostCS := Decisions(1) * NewWarehouseCost
+                    PeriodStorageCost(n) := sum(p in Products)HoldProducts(p,n) * StorageCost
+                end-do
+                TotalIncome := sum(n in Periods)(S2ContractIncome + OtherIncome(n)) * (1 + PriceStr)
+                TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+                TotalProfit := TotalIncome - TotalCost
+                NetProfit := TotalProfit - sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+                maximise(NetProfit)
+                writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",", getsol(NetProfit), ",", getsol(TotalProfit))
+                Decisions(d+1):=Decisions(d+1)-1
+            end-if
+            elif d = 3 then
+            if Decisions(1)=0 and Decisions(2)=1 then
+            writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",","Infeasible","Infeasible")
+            else
+                Decisions(1):=Decisions(1)+1
+                forall (n in Periods) do
+                forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (Decisions(2) * NewContract(p))
+                forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (Decisions(2) * NewContract(p))
+                WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (Decisions(1)*(NewWarehouseSize))
+                forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * Decisions(3) * (NewProductionIncrease/100)
+                S2ContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + Decisions(2) * (NewContract(p) * NewContractPrice(p)))
+                OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (Decisions(2) * NewContract(p))))
+                MachinaryCost := Decisions(3) * NewProductionCost
+                NewWarehouseCostCS := Decisions(1) * NewWarehouseCost
+                PeriodStorageCost(n) := sum(p in Products)HoldProducts(p,n) * StorageCost
+                end-do
+                TotalIncome := sum(n in Periods)(S2ContractIncome + OtherIncome(n)) * (1 + PriceStr)
+                TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+                TotalProfit := TotalIncome - TotalCost
+                NetProfit := TotalProfit - sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+                maximise(NetProfit)
+                writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",", getsol(NetProfit), ",", getsol(TotalProfit))
+                Decisions(1):=Decisions(1)-1
+            end-if
+            end-if
+            Decisions(d):=Decisions(d)-1
+        end-if
+    end-do
+
+    forall(d in NDecisions)Decisions(d):=Decisions(d)+1
+    forall (n in Periods) do
+        forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (Decisions(2) * NewContract(p))
+        forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (Decisions(2) * NewContract(p))
+        WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (Decisions(1)*(NewWarehouseSize))
+        forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * Decisions(3) * (NewProductionIncrease/100)
+    end-do
+    S2ContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + Decisions(2) * (NewContract(p) * NewContractPrice(p)))
+    forall(n in Periods)OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (Decisions(2) * NewContract(p))))
+    MachinaryCost := Decisions(3) * NewProductionCost
+    NewWarehouseCostCS := Decisions(1) * NewWarehouseCost
+    forall(n in Periods)PeriodStorageCost(n) := sum(p in Products)HoldProducts(p,n) * StorageCost
+    TotalIncome := sum(n in Periods)(S2ContractIncome + OtherIncome(n)) * (1 + PriceStr)
+    TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+    TotalProfit := TotalIncome - TotalCost
+    NetProfit := TotalProfit - sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+    maximise(NetProfit)
+    writeln(Decisions(1),",",Decisions(2),",", Decisions(3),",", getsol(NetProfit), ",", getsol(TotalProfit))
+fclose(F_OUTPUT)
+
+
+!———————stage 2 has done——————————stage 2 has done——————————————stage 2 has done————————————————stage 2 has done————————————————————stage 2 has done
+
+!! Furthur Suggestions
+
+ThreeStages := 3
+
+StagesCS:= NewWarehouseDecision + NewContractDecision + NewProductionDecision <= 3
+
+!!Constraints on Contents
+! Define Mix Contents
+forall(c in Contents, p in Products,n in Periods) do
+MixContents(c,p,n) := sum(v in Varieties)TomatoProperties(c,v) * TomatoProductUsed(v,p,n)
+end-do
+
+!Re-Define Mix
+forall(p in Products, n in Periods) do
+Mix(p,n) := sum(v in Varieties)TomatoProductUsed(v,p,n)
+end-do
+
+!Old Constraints on Contents
+forall(c in Contents, n in Periods) do
+ContentsNeed(c,n) := sum(p in Products)ProductProperties(c,p) * Mix(p,n)
+ContentsUsed(c,n) := sum(v in Varieties)TomatoProperties(c,v) * VarietiesUsed(v,n)
+ContentCS(c,n):=ContentsUsed(c,n) = ContentsNeed(c,n)
+end-do
+
+!Constraint 0.02
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n) + 0.02 * Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n) - 0.02 * Mix(p,n)
+end-do
+
+! Define VarietyUsed
+forall (v in Varieties, n in Periods) do
+VarietiesUsed(v,n) := sum(p in Products)TomatoProductUsed(v,p,n)
+end-do
+
+!Define Make Products
+forall(p in Products, n in Periods) do
+MakeProducts(p,n) := (1 + OtherIngredientFactor(p)) * ProductReduction(p) * Mix(p,n)
+end-do
+
+!!Constraints
+forall (n in Periods) do
+! Tomato Availability Constraint
+forall(v in Varieties)AvailabilityCS(v,n) := VarietiesUsed(v,n) <= TomatoSupply(v,n)
+! constraints: contract<= sell <= sell +demand
+forall(p in Products)ContractCS(p,n) := SellProducts(p,n) >= Contract(p) + (NewContractDecision * NewContract(p))
+forall(p in Products)DemandCS(p,n) := SellProducts(p,n) <= Contract(p) + Demand(p) * (1 + DemandStr) + (NewContractDecision * NewContract(p))
+! Hold Products Constraint
+WarehouseCS(n):= sum(p in Products)HoldProducts(p,n) <= WarehouseSize + (NewWarehouseDecision*(NewWarehouseSize))
+! Capacity Constraint
+forall(p in Products)CapacityCS(p,n) := MakeProducts(p,n) <= ProductionLimit(p) + ProductionLimit(p) * NewProductionDecision * (NewProductionIncrease/100)
+end-do
+
+! Sell-Hold-Make Constraint
+forall(p in Products, n in Periods) do
+if(n = 1)then
+HoldCS1(p,n) := HoldProducts(p,n) = HoldProducts(p,NPeriods) + MakeProducts(p,n) - SellProducts(p,n)
+else
+HoldCS2(p,n) := HoldProducts(p,n) = HoldProducts(p,n - 1) + MakeProducts(p,n) - SellProducts(p,n)
+end-if
+end-do
+
+! Define Cost
+forall(n in Periods) do
+PeriodProductionCost(n) := sum(p in Products)(ProductionCost(p) * (1 + ProductionCostStr) + OtherIngredientCost(p)) * MakeProducts(p, n)
+PeriodTomatoCost(n) := sum(v in Varieties)TomatoCost(v,n) * VarietiesUsed(v,n)
+PeriodStorageCost(n) := sum(p in Products)HoldProducts(p,n) * StorageCost
+end-do
+
+! Define Income
+forall(n in Periods)do
+NewContractIncome := sum(p in Products)(Contract(p) * ContractPrice(p) + NewContractDecision * (NewContract(p) * NewContractPrice(p)))
+OtherIncome(n) := sum(p in Products)(SalePrice(p) * (SellProducts(p,n) - Contract(p) - (NewContractDecision * NewContract(p))))
+end-do
+
+!Define Total income, cost and profit
+MachinaryCost := NewProductionDecision * NewProductionCost
+NewWarehouseCostCS := NewWarehouseDecision * NewWarehouseCost
+TotalIncome := sum(n in Periods)(NewContractIncome + OtherIncome(n)) * (1 + PriceStr)
+TotalCost := sum(n in Periods)(PeriodProductionCost(n) + PeriodTomatoCost(n)) + MachinaryCost
+TotalProfit := TotalIncome - TotalCost
+NetProfit := TotalProfit - sum(n in Periods)PeriodStorageCost(n) - NewWarehouseCostCS
+
+maximise(NetProfit)
+
+! Display results
+writeln
+writeln
+writeln("Furthur Suggestions Results:")
+writeln
+writeln("Total Yearly Profit: ", getsol(TotalProfit))
+writeln("Total Yearly Income: ", getsol(TotalIncome))
+writeln("Total Yearly Cost: ", getsol(TotalCost))
+writeln("Net Yearly Profit: ", getsol(NetProfit))
+
+writeln
+forall (v in Varieties, n in Periods) do
+    writeln("During ", PeriodNames(n), ", buy ", getsol(VarietiesUsed(v,n)), " kg of ", v, " tomatoes.")
+end-do
+
+writeln
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", make ", getsol(MakeProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+writeln
+
+forall(n in Periods, p in Products)do
+writeln("During ", PeriodNames(n), ", sell ", getsol(SellProducts(p,n)), " kg of ", Products(p), ".")
+end-do
+
+writeln
+forall(n in Periods) do
+writeln("During ", PeriodNames(n), " the warehouse holds ", getsol(sum(p in Products)HoldProducts(p,n)), " products.")
+end-do
+
+writeln
+writeln("Furthur Sggestions Decisions: ")
+if getsol(NewWarehouseDecision) = 0 then
+writeln("They do not want to get a new warehouse.")
+elif getsol(NewWarehouseDecision) = 1 then
+writeln("They should get a new warehouse.")
+end-if
+
+if getsol(NewContractDecision) = 0 then
+writeln("They don't want to sign the new contract.")
+elif getsol(NewContractDecision) = 1 then
+writeln("They should sign the new contract.")
+end-if
+
+if getsol(NewProductionDecision) = 0 then
+writeln("They don't want to increase production.")
+elif getsol(NewProductionDecision) = 1 then
+writeln("They should increase production.")
+end-if
+
+! Export results to excel for processings
+fopen("Amount of Each Variety Used Per Period Stage 3.csv", F_OUTPUT)
+    write("Type of Tomato")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(V in Varieties) do
+        writeln
+        write(Varieties(V))
+        forall(P in Periods) do
+            write(",", getsol(VarietiesUsed(V, P)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Amount of Each Product Sold Per Period Stage 3.csv", F_OUTPUT)
+    write("Type of Product Sold")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(N in Periods) do
+            write(",", getsol(SellProducts(p, N)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("Other Income for Each Period Stage 3.csv", F_OUTPUT)
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    writeln
+    write("Other Income")
+    forall(N in Periods) write(",", getsol(OtherIncome(N)))
+fclose(F_OUTPUT)
+
+fopen("Warehouse Usage for Each Period Stage 3.csv", F_OUTPUT)
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    writeln
+    write("Warehouse Usage")
+    forall(N in Periods) write(",", getsol(sum(p in Products)HoldProducts(p,N)))
+fclose(F_OUTPUT)
+
+fopen("Amount of Each Product Made Per Period Stage 3.csv", F_OUTPUT)
+    write("Type of Product Made")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(N in Periods) do
+            write(",", getsol(MakeProducts(p, N)))
+        end-do
+    end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("New_Mix_Properties_freeDV.csv", F_OUTPUT)
+    write("Type of Products")
+    forall(N in Periods) do
+        write(",", PeriodNames(N))
+    end-do
+    forall(p in Products) do
+        writeln
+        write(Products(p))
+        forall(n in Periods) do
+        forall(C in Contents) do
+        if getsol(Mix(p,n)) = 0 then
+           if (C = "Solid") then
+           NewProductPropertiesSolid:= ProductProperties(C,p)
+           end-if
+           if (C = "Liquid") then
+           NewProductPropertiesLiquid:=ProductProperties(C,p)
+           end-if
+        elif getsol(Mix(p,n))>0 then
+           NewProductProperties := getsol(MixContents(C,p,n))/getsol(Mix(p,n))
+           if (C = "Solid") then
+           NewProductPropertiesSolid := getsol(MixContents(C,p,n))/getsol(Mix(p,n))
+           end-if
+           if (C = "Liquid") then
+           NewProductPropertiesLiquid := getsol(MixContents(C,p,n))/getsol(Mix(p,n))
+           end-if
+        elif getsol(Mix(p,n))<0 then
+        writeln("somethings is wrong")
+        end-if
+        end-do
+        write(",", round(NewProductPropertiesSolid*100)/100, ":", round(NewProductPropertiesLiquid*100)/100 )
+        end-do
+     end-do
+    writeln
+fclose(F_OUTPUT)
+
+fopen("delta_furthur_investivation.csv",  F_OUTPUT)
+write("delta,  TotalProfit")
+writeln
+
+delta:= 0.000
+
+repeat
+
+forall(c in Contents, p in Products, n in Periods) do
+PropertyCS(c,p,n) := MixContents(c,p,n) <= ProductProperties(c,p) * Mix(p,n) + delta * Mix(p,n)
+PropertyCS2(c,p,n) := MixContents(c,p,n) >= ProductProperties(c,p) * Mix(p,n) - delta * Mix(p,n)
+end-do
+
+maximize(NetProfit)
+
+write(delta,",", getsol(NetProfit))
+!forall(c in Crops) write(",", getsol(Area(c)))
+writeln
+
+delta += 0.001
+until delta > 0.02
+fclose(F_OUTPUT)
+
+end-model
