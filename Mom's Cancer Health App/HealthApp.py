@@ -1,9 +1,8 @@
-#lqzg mxac zcum qxwj
+import os
 import smtplib
 from email.mime.text import MIMEText
 from kivy.app import App
 from kivy.core.audio import SoundLoader
-from kivy.core.image import Image
 from kivy.core.window import Window
 from kivy.graphics import Color, Rectangle
 from kivy.uix.label import Label
@@ -256,11 +255,11 @@ class HealthReminderApp(App):
             self.mood_label.text = f"Logged Mood: {mood}"
             Clock.schedule_once(self.revert_mood_label, 2)
 
-            if mood < 8:
-                self.reminder_message_label.text = "You should call your daughter she'd love to spend time with you"
             if mood < 6:
                 self.send_sms_via_email('verizon', f"Mood rating is low: {mood}. Check in with her.", "248-318-8361")
                 self.reminder_message_label.text = f"Mood {mood}: Message sent to Sara"
+            elif mood < 8:
+                self.reminder_message_label.text = "You should call your daughter she'd love to spend time with you"
             else:
                 self.reminder_message_label.text = "I'm happy you're in a good mood"
 
@@ -269,7 +268,7 @@ class HealthReminderApp(App):
 
 
     def revert_sleep_label(self, dt):
-        self.sleep_label.text = "Log your Mood (1-10):"
+        self.sleep_label.text = "Log your Sleep (1-10):"
 
     def store_sleep(self, sleep_value):
         try:
@@ -283,6 +282,7 @@ class HealthReminderApp(App):
                 self.reminder_message_label.text = "Great! Keep up the good sleep habits!"
 
             self.sleep_label.text = f"Logged Sleep: {sleep}"
+            Clock.schedule_once(self.revert_sleep_label, 2)
 
         except ValueError:
             self.reminder_message_label.text = "Invalid sleep rating. Please enter a number."
@@ -304,8 +304,8 @@ class HealthReminderApp(App):
 
         smtp_server = 'smtp.gmail.com'
         smtp_port = 587
-        sender_email = 'shuston007@gmail.com'
-        sender_password = 'lqzg mxac zcum qxwj'
+        sender_email = os.environ.get('HEALTH_APP_EMAIL', 'shuston007@gmail.com')
+        sender_password = os.environ.get('HEALTH_APP_PASSWORD', '')
 
         msg = MIMEText(message)
         msg['From'] = sender_email
