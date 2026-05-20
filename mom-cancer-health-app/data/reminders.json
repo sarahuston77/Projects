@@ -1,0 +1,27 @@
+[
+  {
+    "id": "water",
+    "text": "Drink plenty of water to flush your bladder.\nGo get Starbucks water since it's your fav",
+    "time": "09:00"
+  },
+  {
+    "id": "spicy_foods",
+    "text": "Avoid spicy foods (Like Papa Joes pasta meal)\nto reduce bladder irritation.",
+    "time": "12:00"
+  },
+  {
+    "id": "appointment",
+    "text": "Check if your follow-up appointment\nis scheduled (every 6 weeks!!!!).",
+    "time": "15:00"
+  },
+  {
+    "id": "caffeine",
+    "text": "Limit caffeine intake to prevent\nbladder irritation. You don't want\nto be awake anyways. Hahahh",
+    "time": "17:00"
+  },
+  {
+    "id": "dinner",
+    "text": "Consider getting a healthy dinner with Sara :)\nto support bladder health.",
+    "time": "18:30"
+  }
+]
