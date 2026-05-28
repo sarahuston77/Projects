@@ -252,6 +252,9 @@ class HealthReminderApp(App):
     def evaluate_mood(self, mood_value):
         try:
             mood = int(mood_value)
+            if mood < 1 or mood > 10:
+                self.reminder_message_label.text = "Please enter a number between 1 and 10."
+                return
             self.mood_label.text = f"Logged Mood: {mood}"
             Clock.schedule_once(self.revert_mood_label, 2)
 
@@ -273,6 +276,9 @@ class HealthReminderApp(App):
     def store_sleep(self, sleep_value):
         try:
             sleep = int(sleep_value)
+            if sleep < 1 or sleep > 10:
+                self.reminder_message_label.text = "Please enter a number between 1 and 10."
+                return
 
             if sleep < 6:
                 self.reminder_message_label.text = "Call Sara, she might be able to help you sleep"
