@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 DB_NAME = "health_app.db"
 
@@ -69,20 +69,65 @@ def get_logs_since(days=7):
     return [dict(row) for row in rows]
 
 
+def get_logging_streak(today=None):
+    """Number of consecutive days (ending today) with at least one log entry."""
+    if today is None:
+        today = date.today()
+
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT substr(created_at, 1, 10) AS day FROM log_entries"
+        ).fetchall()
+
+    logged_days = {row["day"] for row in rows}
+    streak = 0
+    cursor = today
+    while cursor.isoformat() in logged_days:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
+
+
+def _streak_banner(streak):
+    if streak == 0:
+        return "Log today to start a streak!"
+    milestones = {7: "🎉 One full week!", 30: "🏆 30 days strong!", 100: "🌟 100 days!"}
+    suffix = f"  {milestones[streak]}" if streak in milestones else ""
+    return f"🔥 {streak}-day logging streak!{suffix}"
+
+
 def format_weekly_summary(days=7):
     logs = get_logs_since(days)
+    streak = get_logging_streak()
+
     if not logs:
-        return "No sleep or mood logs yet.\nLog today to start your history."
+        return (
+            "No sleep or mood logs yet.\nLog today to start your history.\n\n"
+            + _streak_banner(streak)
+        )
 
     by_day = {}
+    sleep_values, mood_values = [], []
     for row in logs:
         dt = datetime.fromisoformat(row["created_at"])
         day_key = dt.date().isoformat()
         if day_key not in by_day:
             by_day[day_key] = {"label": dt.strftime("%a %b %d"), "sleep": None, "mood": None}
         by_day[day_key][row["entry_type"]] = row["value"]
+        if row["entry_type"] == "sleep":
+            sleep_values.append(row["value"])
+        elif row["entry_type"] == "mood":
+            mood_values.append(row["value"])
 
-    lines = [f"This week (last {days} days):", ""]
+    def _avg(values):
+        return f"{sum(values) / len(values):.1f}" if values else "—"
+
+    lines = [
+        f"This week (last {days} days):",
+        f"  Average sleep: {_avg(sleep_values)}    Average mood: {_avg(mood_values)}",
+        f"  {_streak_banner(streak)}",
+        "",
+    ]
     for day_key in sorted(by_day.keys(), reverse=True):
         parts = by_day[day_key]
         sleep = parts["sleep"] if parts["sleep"] is not None else "—"

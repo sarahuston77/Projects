@@ -262,8 +262,15 @@ class HealthReminderApp(App):
             Clock.schedule_once(self.revert_mood_label, 2)
 
             if mood < 6:
-                self.send_sms_via_email('verizon', f"Mood rating is low: {mood}. Check in with her.", "248-318-8361")
-                self.reminder_message_label.text = f"Mood {mood}: saved and message sent to Sara"
+                sent = self.send_sms_via_email(
+                    'verizon',
+                    f"Mood rating is low: {mood}. Check in with her.",
+                    os.environ.get('HEALTH_APP_CAREGIVER_PHONE', ''),
+                )
+                if sent:
+                    self.reminder_message_label.text = (
+                        f"Mood {mood}: saved and message sent to Sara"
+                    )
             elif mood < 8:
                 self.reminder_message_label.text = "Mood saved. Call your daughter — she'd love to spend time with you"
             else:
@@ -295,7 +302,7 @@ class HealthReminderApp(App):
         except ValueError:
             self.reminder_message_label.text = "Invalid sleep rating. Enter a whole number from 1 to 10."
 
-    def send_sms_via_email(self, carrier, message, phone_number="248-318-8361"):
+    def send_sms_via_email(self, carrier, message, phone_number=""):
         carrier_gateways = {
             'verizon': 'vtext.com',
             'att': 'txt.att.net',
@@ -305,13 +312,31 @@ class HealthReminderApp(App):
 
         if carrier not in carrier_gateways:
             print("Carrier not supported")
+            self.reminder_message_label.text = (
+                f"Mood saved, but SMS alert failed: carrier '{carrier}' not supported."
+            )
             return
 
-        to_email = 'khuston@hotmail.com'
+        digits = ''.join(ch for ch in phone_number if ch.isdigit())
+        if len(digits) != 10:
+            print(f"Invalid phone number: {phone_number}")
+            self.reminder_message_label.text = (
+                "Mood saved, but SMS alert failed: caregiver phone not configured."
+            )
+            return
+
+        to_email = f"{digits}@{carrier_gateways[carrier]}"
         smtp_server = 'smtp.gmail.com'
         smtp_port = 587
-        sender_email = os.environ.get('HEALTH_APP_EMAIL', 'shuston007@gmail.com')
+        sender_email = os.environ.get('HEALTH_APP_EMAIL', '')
         sender_password = os.environ.get('HEALTH_APP_PASSWORD', '')
+
+        if not sender_email or not sender_password:
+            print("HEALTH_APP_EMAIL / HEALTH_APP_PASSWORD not set; cannot send SMS.")
+            self.reminder_message_label.text = (
+                "Mood saved, but SMS alert failed: email credentials not configured."
+            )
+            return
 
         msg = MIMEText(message)
         msg['From'] = sender_email
@@ -319,14 +344,18 @@ class HealthReminderApp(App):
         msg['Subject'] = 'Health Reminder'
 
         try:
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, [to_email], msg.as_string())
-            server.quit()
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.sendmail(sender_email, [to_email], msg.as_string())
             print("SMS sent successfully")
+            return True
         except Exception as e:
             print(f"Failed to send SMS: {e}")
+            self.reminder_message_label.text = (
+                f"Mood saved, but SMS alert to Sara failed: {e}"
+            )
+            return False
 
 
 if __name__ == "__main__":
