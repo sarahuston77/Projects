@@ -69,6 +69,16 @@ def get_logs_since(days=7):
     return [dict(row) for row in rows]
 
 
+SPARK_BARS = "▁▂▃▄▅▆▇█"
+
+
+def _spark_char(value):
+    if value is None:
+        return "·"
+    idx = max(0, min(7, round((value - 1) * 7 / 9)))
+    return SPARK_BARS[idx]
+
+
 def format_weekly_summary(days=7):
     logs = get_logs_since(days)
     if not logs:
@@ -82,7 +92,26 @@ def format_weekly_summary(days=7):
             by_day[day_key] = {"label": dt.strftime("%a %b %d"), "sleep": None, "mood": None}
         by_day[day_key][row["entry_type"]] = row["value"]
 
-    lines = [f"This week (last {days} days):", ""]
+    today = datetime.now().date()
+    chrono_keys = [(today - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    sleep_series = [by_day.get(k, {}).get("sleep") for k in chrono_keys]
+    mood_series = [by_day.get(k, {}).get("mood") for k in chrono_keys]
+
+    sleep_present = [v for v in sleep_series if v is not None]
+    mood_present = [v for v in mood_series if v is not None]
+    sleep_avg = f"{sum(sleep_present)/len(sleep_present):.1f}" if sleep_present else "—"
+    mood_avg = f"{sum(mood_present)/len(mood_present):.1f}" if mood_present else "—"
+
+    sleep_spark = "".join(_spark_char(v) for v in sleep_series)
+    mood_spark = "".join(_spark_char(v) for v in mood_series)
+
+    lines = [
+        f"This week (last {days} days):",
+        "",
+        f"Sleep:  {sleep_spark}   avg {sleep_avg}",
+        f"Mood:   {mood_spark}   avg {mood_avg}",
+        "",
+    ]
     for day_key in sorted(by_day.keys(), reverse=True):
         parts = by_day[day_key]
         sleep = parts["sleep"] if parts["sleep"] is not None else "—"

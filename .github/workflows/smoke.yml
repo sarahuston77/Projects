@@ -1,0 +1,24 @@
+name: smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Byte-compile Python sources
+        run: python -m compileall -q mom-cancer-health-app
+      - name: Import storage + reminders (no Kivy needed)
+        run: |
+          cd mom-cancer-health-app
+          python -c "import storage, reminders; storage.init_db(); print('OK')"
+      - name: Verify reminders fallback config is valid
+        run: |
+          cd mom-cancer-health-app
+          python -c "import reminders; r = reminders.build_fallback_reminders(); assert len(r) == 5, len(r); print(f'{len(r)} reminders OK')"
