@@ -56,6 +56,7 @@ class HealthReminderApp(App):
         root.bind(pos=self._sync_root_bg, size=self._sync_root_bg)
 
         root.add_widget(self._build_header())
+        root.add_widget(Spacer(12))
 
         body = BoxLayout(orientation="horizontal", spacing=dp(20), size_hint_y=1)
         body.add_widget(self._build_wellness_panel())
@@ -71,9 +72,8 @@ class HealthReminderApp(App):
             Clock.schedule_once(self._apply_demo_state, 0.5)
 
         if self.screenshot_mode:
-            Clock.schedule_once(self._capture_screenshots, 1.2)
+            Clock.schedule_once(self._capture_screenshots, 2.0)
 
-        self.root = root
         Window.bind(on_resize=self.update_font_sizes)
         self.update_font_sizes(Window, Window.width, Window.height)
         return root
@@ -100,7 +100,7 @@ class HealthReminderApp(App):
 
         header.bind(pos=_sync_header, size=_sync_header)
 
-        title_block = BoxLayout(orientation="vertical", spacing=dp(2))
+        title_block = BoxLayout(orientation="vertical", spacing=dp(2), size_hint_x=0.65)
         self.title_label = Label(
             text="Care Companion",
             font_size=dp(28),
@@ -120,9 +120,10 @@ class HealthReminderApp(App):
             size_hint_y=None,
             height=dp(22),
         )
+        self.title_label.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
+        self.subtitle_label.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
         title_block.add_widget(self.title_label)
         title_block.add_widget(self.subtitle_label)
-        title_block.bind(minimum_width=title_block.setter("width"))
 
         self.date_label = Label(
             text=datetime.now().strftime("%A, %B %d"),
@@ -290,6 +291,9 @@ class HealthReminderApp(App):
             self.acknowledge_button.background_color = theme.ACCENT_ALERT
 
     def _capture_screenshots(self, _dt):
+        if self.schedule_label.texture_size[1]:
+            self.schedule_label.height = self.schedule_label.texture_size[1]
+
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "screenshots")
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, f"care-companion-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png")
