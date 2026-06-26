@@ -91,9 +91,9 @@ def get_logging_streak(today=None):
 def _streak_banner(streak):
     if streak == 0:
         return "Log today to start a streak!"
-    milestones = {7: "🎉 One full week!", 30: "🏆 30 days strong!", 100: "🌟 100 days!"}
+    milestones = {7: "One full week!", 30: "30 days strong!", 100: "100 days!"}
     suffix = f"  {milestones[streak]}" if streak in milestones else ""
-    return f"🔥 {streak}-day logging streak!{suffix}"
+    return f"{streak}-day logging streak!{suffix}"
 
 
 def format_weekly_summary(days=7):
@@ -162,6 +162,38 @@ def was_reminder_shown_today(reminder_id, today=None):
             (reminder_id, today),
         ).fetchone()
     return row is not None
+
+
+def seed_demo_data():
+    """Insert sample logs for demo screenshots and videos."""
+    existing = get_logs_since(days=7)
+    if existing:
+        return
+
+    now = datetime.now()
+    samples = [
+        (6, "sleep", 7),
+        (6, "mood", 8),
+        (5, "sleep", 6),
+        (5, "mood", 7),
+        (4, "sleep", 8),
+        (4, "mood", 6),
+        (3, "sleep", 7),
+        (3, "mood", 9),
+        (2, "sleep", 5),
+        (2, "mood", 6),
+        (1, "sleep", 7),
+        (1, "mood", 8),
+        (0, "sleep", 8),
+        (0, "mood", 7),
+    ]
+    with _connect() as conn:
+        for days_ago, entry_type, value in samples:
+            created_at = (now - timedelta(days=days_ago)).replace(hour=9, minute=0).isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO log_entries (entry_type, value, created_at) VALUES (?, ?, ?)",
+                (entry_type, value, created_at),
+            )
 
 
 def get_due_reminders(reminder_configs, now=None):
