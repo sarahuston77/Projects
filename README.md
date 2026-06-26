@@ -1,21 +1,44 @@
 # Sara Huston - Project Portfolio
 
-A collection of projects showcasing work in health-tech, optimization, and simulation.
+A collection of projects that blend human-centered design, health technology, and analytical problem solving.
 
 ---
 
-## 🏥 Mom's Cancer Health App
-**Tech:** Python, Kivy, Class Objects
+## 🏥 Care Companion
+A calm, supportive digital experience designed to help someone stay on top of daily wellness routines with less stress.
 
-A personalized health app developed using Python and Kivy, aimed at supporting my mom during her battle with bladder cancer. The app provides research-based prompts, tracks appointments, and logs sleep/mood patterns. It delivered real-time insights and support, contributing to a significant reduction in her blood pressure by 10 bpm.
+This project focuses on comfort, clarity, and consistency through a simple interface that makes it easy to:
+- log sleep and mood
+- review weekly progress
+- receive gentle reminders
+- feel supported in everyday care
+
+### Visual Preview
+![Care Companion preview](mom-cancer-health-app/demo_ui/preview.svg)
+
+### Highlights
+- Warm, approachable product experience
+- Clear daily-care dashboard
+- Reminder-driven engagement
+- Designed for real-world emotional support, not just functionality
+
+### Tech Snapshot
+Python · UI design · wellness app experience
+
+---
 
 ## 📊 Optimization Model for Supply Chain and Production Planning
-**Tech:** MMXPRS, Fico Xpress, Mosel
+A data-driven optimization project focused on improving planning decisions for a mock production environment.
 
-Created a 1000+ line optimization model for a mock tomato company, utilizing MMXPRS and Mosel. The model improved profits by 22% across 4 products through structured decision-making for purchasing, production, and sales, while balancing production and storage constraints.
+### Highlights
+- Built a structured decision model for supply chain planning
+- Improved profitability through better production and sales choices
+- Balanced operational constraints with long-term planning goals
+
+### Tech Snapshot
+MMXPRS · Fico Xpress · Mosel
 
 ---
 
 ## License
-
-This project is for portfolio/educational purposes.
+This project is for portfolio and educational purposes.
