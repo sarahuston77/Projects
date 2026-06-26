@@ -16,6 +16,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 
+import personalization
 import reminders
 import storage
 
@@ -23,6 +24,7 @@ import storage
 class HealthReminderApp(App):
     def build(self):
         storage.init_db()
+        self.profile = personalization.load_profile()
         self.reminder_configs = self._load_reminder_configs()
         self.active_reminder = None
 
@@ -51,7 +53,7 @@ class HealthReminderApp(App):
         )
 
         self.title_label = Label(
-            text="Health Reminder App",
+            text=f"{self.profile['user_name']}'s Care Companion",
             font_size=48,
             font_name="Arial",
             color=(1, 1, 1, 1),
@@ -99,11 +101,11 @@ class HealthReminderApp(App):
         self.acknowledge_button = Button(text="Acknowledge", **button_style)
         self.acknowledge_button.bind(on_press=self.acknowledge_reminder)
 
-        self.sleep_label = Label(text="Log your Sleep (1-10):", **label_style)
+        self.sleep_label = Label(text=f"How did {self.profile['user_name']} sleep? (1-10)", **label_style)
         self.sleep_button = Button(text="Log Sleep", **button_style)
         self.sleep_button.bind(on_press=self.log_sleep)
 
-        self.mood_label = Label(text="Log your Mood (1-10):", **label_style)
+        self.mood_label = Label(text=f"How is {self.profile['user_name']} feeling today? (1-10)", **label_style)
         self.mood_button = Button(text="Log Mood", **button_style)
         self.mood_button.bind(on_press=self.log_mood)
 
@@ -144,8 +146,10 @@ class HealthReminderApp(App):
         next_times = ", ".join(r["time"] for r in self.reminder_configs[:3])
         if len(self.reminder_configs) > 3:
             next_times += ", ..."
+        greeting = personalization.build_greeting(self.profile)
         return (
-            "Reminders appear at your scheduled times.\n"
+            f"{greeting}\n"
+            f"Reminders are here for you today.\n"
             f"Today: {next_times}\n\n"
             "Tap Acknowledge when you see a reminder."
         )
@@ -224,10 +228,18 @@ class HealthReminderApp(App):
             sound.play()
 
     def log_sleep(self, instance):
-        self.show_popup("Log Sleep", "Enter your sleep rating (1-10):", self.store_sleep)
+        self.show_popup(
+            f"Log {self.profile['user_name']}'s Sleep",
+            f"Enter {self.profile['user_name']}'s sleep rating (1-10):",
+            self.store_sleep,
+        )
 
     def log_mood(self, instance):
-        self.show_popup("Log Mood", "Enter your mood rating (1-10):", self.evaluate_mood)
+        self.show_popup(
+            f"Log {self.profile['user_name']}'s Mood",
+            f"Enter {self.profile['user_name']}'s mood rating (1-10):",
+            self.evaluate_mood,
+        )
 
     def show_popup(self, title, message, on_submit):
         content = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -249,7 +261,7 @@ class HealthReminderApp(App):
         popup.open()
 
     def revert_mood_label(self, dt):
-        self.mood_label.text = "Log your Mood (1-10):"
+        self.mood_label.text = f"How is {self.profile['user_name']} feeling today? (1-10)"
 
     def evaluate_mood(self, mood_value):
         try:
@@ -262,25 +274,39 @@ class HealthReminderApp(App):
             Clock.schedule_once(self.revert_mood_label, 2)
 
             if mood < 6:
+                caregiver_name = self.profile.get("caregiver_name", "your caregiver")
                 sent = self.send_sms_via_email(
                     'verizon',
-                    f"Mood rating is low: {mood}. Check in with her.",
+                    personalization.personalize_message(
+                        f"Mood rating is low: {mood}. Check in with {caregiver_name}.",
+                        {**self.profile, "caregiver_name": caregiver_name},
+                    ),
                     os.environ.get('HEALTH_APP_CAREGIVER_PHONE', ''),
                 )
                 if sent:
-                    self.reminder_message_label.text = (
-                        f"Mood {mood}: saved and message sent to Sara"
+                    self.reminder_message_label.text = personalization.personalize_message(
+                        "Mood {mood}: saved and a message was sent to {caregiver_name}.",
+                        {**self.profile, "mood": mood},
                     )
             elif mood < 8:
-                self.reminder_message_label.text = "Mood saved. Call your daughter — she'd love to spend time with you"
+                self.reminder_message_label.text = personalization.personalize_message(
+                    "Mood saved. {caregiver_name} would love to check in with you soon.",
+                    self.profile,
+                )
             else:
-                self.reminder_message_label.text = "Mood saved. I'm happy you're in a good mood"
+                self.reminder_message_label.text = personalization.personalize_message(
+                    "Mood saved. I’m so glad you’re feeling brighter today, {user_name}.",
+                    self.profile,
+                )
 
         except ValueError:
-            self.reminder_message_label.text = "Invalid mood rating. Enter a whole number from 1 to 10."
+            self.reminder_message_label.text = personalization.personalize_message(
+                "{user_name}, please enter a whole number from 1 to 10 for your mood.",
+                self.profile,
+            )
 
     def revert_sleep_label(self, dt):
-        self.sleep_label.text = "Log your Sleep (1-10):"
+        self.sleep_label.text = f"How did {self.profile['user_name']} sleep? (1-10)"
 
     def store_sleep(self, sleep_value):
         try:
@@ -293,14 +319,26 @@ class HealthReminderApp(App):
             Clock.schedule_once(self.revert_sleep_label, 2)
 
             if sleep < 6:
-                self.reminder_message_label.text = "Sleep saved. Call Sara — she might be able to help you sleep"
+                self.reminder_message_label.text = personalization.personalize_message(
+                    "Sleep saved. {caregiver_name} can help you feel supported tonight.",
+                    self.profile,
+                )
             elif sleep < 8:
-                self.reminder_message_label.text = "Sleep saved. You might need more rest — consider your sleep routine."
+                self.reminder_message_label.text = personalization.personalize_message(
+                    "Sleep saved. {user_name}, a little extra rest might help today.",
+                    self.profile,
+                )
             else:
-                self.reminder_message_label.text = "Sleep saved. Great — keep up the good sleep habits!"
+                self.reminder_message_label.text = personalization.personalize_message(
+                    "Sleep saved. That sounds like a restful night, {user_name}.",
+                    self.profile,
+                )
 
         except ValueError:
-            self.reminder_message_label.text = "Invalid sleep rating. Enter a whole number from 1 to 10."
+            self.reminder_message_label.text = personalization.personalize_message(
+                "{user_name}, please enter a whole number from 1 to 10 for your sleep.",
+                self.profile,
+            )
 
     def send_sms_via_email(self, carrier, message, phone_number=""):
         carrier_gateways = {
@@ -312,16 +350,18 @@ class HealthReminderApp(App):
 
         if carrier not in carrier_gateways:
             print("Carrier not supported")
-            self.reminder_message_label.text = (
-                f"Mood saved, but SMS alert failed: carrier '{carrier}' not supported."
+            self.reminder_message_label.text = personalization.personalize_message(
+                f"Mood saved, but the note to {{caregiver_name}} could not be sent: carrier '{carrier}' not supported.",
+                self.profile,
             )
             return
 
         digits = ''.join(ch for ch in phone_number if ch.isdigit())
         if len(digits) != 10:
             print(f"Invalid phone number: {phone_number}")
-            self.reminder_message_label.text = (
-                "Mood saved, but SMS alert failed: caregiver phone not configured."
+            self.reminder_message_label.text = personalization.personalize_message(
+                "Mood saved, but the note to {caregiver_name} could not be sent: caregiver phone not configured.",
+                self.profile,
             )
             return
 
@@ -333,8 +373,9 @@ class HealthReminderApp(App):
 
         if not sender_email or not sender_password:
             print("HEALTH_APP_EMAIL / HEALTH_APP_PASSWORD not set; cannot send SMS.")
-            self.reminder_message_label.text = (
-                "Mood saved, but SMS alert failed: email credentials not configured."
+            self.reminder_message_label.text = personalization.personalize_message(
+                "Mood saved, but the note to {caregiver_name} could not be sent: email credentials not configured.",
+                self.profile,
             )
             return
 
@@ -352,8 +393,9 @@ class HealthReminderApp(App):
             return True
         except Exception as e:
             print(f"Failed to send SMS: {e}")
-            self.reminder_message_label.text = (
-                f"Mood saved, but SMS alert to Sara failed: {e}"
+            self.reminder_message_label.text = personalization.personalize_message(
+                f"Mood saved, but the note to {{caregiver_name}} failed: {e}",
+                self.profile,
             )
             return False
 
