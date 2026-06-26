@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Care Companion Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --navy: #1f4e7a;
+        --blue: #2b73c9;
+        --muted: #5b6f84;
+        --ink: #243b53;
+        --panel: #ffffff;
+        --soft: #f8fbff;
+      }
+      body {
+        margin: 0;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        background: linear-gradient(135deg, #f4f7fb 0%, #eef4fb 100%);
+        color: var(--ink);
+      }
+      .shell {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      .header {
+        background: var(--navy);
+        color: white;
+        border-radius: 24px;
+        padding: 24px 28px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        box-shadow: 0 12px 30px rgba(31, 78, 122, 0.16);
+      }
+      .header img {
+        width: 72px;
+        height: 72px;
+        border-radius: 16px;
+      }
+      .header h1 {
+        margin: 0 0 6px;
+        font-size: 32px;
+      }
+      .header p {
+        margin: 0;
+        color: #e8f3ff;
+        font-size: 15px;
+      }
+      .content {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 1.3fr 0.7fr;
+        gap: 20px;
+      }
+      .panel {
+        background: var(--panel);
+        border-radius: 22px;
+        padding: 22px;
+        box-shadow: 0 8px 24px rgba(36, 59, 83, 0.08);
+      }
+      .panel.soft { background: var(--soft); }
+      .panel h2 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        color: var(--ink);
+      }
+      .panel p {
+        margin: 0 0 18px;
+        color: var(--muted);
+      }
+      .actions button {
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        padding: 13px 14px;
+        margin-bottom: 12px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--blue);
+        color: white;
+      }
+      .actions button.secondary { background: #5c7b99; }
+      .status {
+        background: #eef7ff;
+        border-radius: 12px;
+        padding: 14px;
+        margin-top: 16px;
+        color: var(--ink);
+        line-height: 1.5;
+      }
+      .pill {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eaf4ff;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      @media (max-width: 920px) {
+        .content { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="header">
+        <img src="../assets/images/dog-training.png" alt="Care companion icon" />
+        <div>
+          <h1>Care Companion</h1>
+          <p>Comfort, reminders, and daily support in one place</p>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="panel">
+          <span class="pill">Daily care actions</span>
+          <h2>Supportive daily check-ins</h2>
+          <p>Track sleep, log mood, and review your week with a calmer, more polished experience.</p>
+          <div class="actions">
+            <button>Log Sleep</button>
+            <button>Log Mood</button>
+            <button class="secondary">View This Week</button>
+          </div>
+        </div>
+
+        <div class="panel soft">
+          <span class="pill">Today’s reminder</span>
+          <h2>Gentle, timely guidance</h2>
+          <p>A supportive reminder experience designed for comfort and clarity.</p>
+          <div class="status">
+            Reminders appear at your scheduled times.<br />
+            Today: 09:00, 12:00, 15:00<br /><br />
+            Tap Acknowledge when you see a reminder.
+          </div>
+          <button style="margin-top: 16px; background: #1f4e7a;">Acknowledge</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

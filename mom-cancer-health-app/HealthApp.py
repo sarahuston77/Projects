@@ -1,144 +1,151 @@
+import argparse
 import os
-import smtplib
-from email.mime.text import MIMEText
-from datetime import datetime
-
-from kivy.app import App
-from kivy.clock import Clock
-from kivy.core.audio import SoundLoader
-from kivy.core.window import Window
-from kivy.graphics import Color, Rectangle
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.image import Image
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.textinput import TextInput
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 import reminders
 import storage
 
 
-class HealthReminderApp(App):
-    def build(self):
+class HealthReminderApp:
+    def __init__(self, demo_mode=False):
+        self.demo_mode = demo_mode
+        self.reminder_configs = []
+        self.active_reminder = None
+        self.root = tk.Tk()
+        self.root.title("Care Companion")
+        self.root.geometry("1100x760")
+        self.root.minsize(900, 680)
+        self.root.configure(bg="#f4f7fb")
+        self.root.option_add("*Font", "Segoe UI 11")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
         storage.init_db()
         self.reminder_configs = self._load_reminder_configs()
-        self.active_reminder = None
+        self._build_ui()
+        self._refresh_status()
+        self.root.after(300, self._check_reminders_loop)
 
-        main_layout = BoxLayout(orientation='horizontal', padding=30, spacing=25)
+        if self.demo_mode:
+            self.root.after(1000, self._run_demo_sequence)
 
-        self.left_layout = BoxLayout(orientation='vertical', padding=20, spacing=20, size_hint=(0.66, 1))
-        self.right_layout = BoxLayout(orientation='vertical', padding=20, spacing=20, size_hint=(0.33, 1))
-
-        with self.left_layout.canvas.before:
-            Color(0.9, 0.9, 0.9, 1)
-            self.left_rect = Rectangle(size=self.left_layout.size, pos=self.left_layout.pos)
-        self.left_layout.bind(size=self.update_background_rect, pos=self.update_background_rect)
-
-        with self.right_layout.canvas.before:
-            Color(0.8, 0.9, 1, 1)
-            self.right_rect = Rectangle(size=self.right_layout.size, pos=self.right_layout.pos)
-        self.right_layout.bind(size=self.update_right_background_rect, pos=self.update_right_background_rect)
-
-        self.title_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.3), padding=(20, 20))
-
-        self.left_icon = Image(
-            source='assets/images/dog-training.png',
-            size_hint=(0.1, 1),
-            allow_stretch=True,
-            keep_ratio=True,
-        )
-
-        self.title_label = Label(
-            text="Health Reminder App",
-            font_size=48,
-            font_name="Arial",
-            color=(1, 1, 1, 1),
-            size_hint=(0.8, 1),
-            bold=True,
-            halign="center",
-            valign="middle",
-            padding=(20, 20),
-        )
-
-        self.right_icon = Image(
-            source='assets/images/dog-training.png',
-            size_hint=(0.1, 1),
-            allow_stretch=True,
-            keep_ratio=True,
-        )
-
-        self.title_layout.add_widget(self.left_icon)
-        self.title_layout.add_widget(self.title_label)
-        self.title_layout.add_widget(self.right_icon)
-
-        with self.title_layout.canvas.before:
-            Color(0.1, 0.6, 0.8, 1)
-            self.title_rect = Rectangle(size=self.title_layout.size, pos=self.title_layout.pos)
-        self.title_layout.bind(size=self.update_title_background_rect, pos=self.update_title_background_rect)
-
-        Window.clearcolor = (1.0, 0.5451, 0.2392, 1.0)
-
-        label_style = {'font_size': 22, 'color': (0.1, 0.1, 0.5, 1)}
-        button_style = {
-            'size_hint': (1, 0.35),
-            'background_color': (0.2, 0.6, 0.8, 1),
-            'font_size': 20,
-            'color': (1, 1, 1, 1),
-        }
-
-        self.reminder_message_label = Label(
-            text=self._waiting_message(),
-            font_size=22,
-            halign="left",
-            valign="top",
-        )
-        self.reminder_message_label.bind(size=self._update_reminder_text_size)
-
-        self.acknowledge_button = Button(text="Acknowledge", **button_style)
-        self.acknowledge_button.bind(on_press=self.acknowledge_reminder)
-
-        self.sleep_label = Label(text="Log your Sleep (1-10):", **label_style)
-        self.sleep_button = Button(text="Log Sleep", **button_style)
-        self.sleep_button.bind(on_press=self.log_sleep)
-
-        self.mood_label = Label(text="Log your Mood (1-10):", **label_style)
-        self.mood_button = Button(text="Log Mood", **button_style)
-        self.mood_button.bind(on_press=self.log_mood)
-
-        self.history_button = Button(text="View This Week", **button_style)
-        self.history_button.bind(on_press=self.show_week_history)
-
-        self.left_layout.add_widget(self.sleep_label)
-        self.left_layout.add_widget(self.sleep_button)
-        self.left_layout.add_widget(self.mood_label)
-        self.left_layout.add_widget(self.mood_button)
-        self.left_layout.add_widget(self.history_button)
-
-        self.right_layout.add_widget(self.reminder_message_label)
-        self.right_layout.add_widget(self.acknowledge_button)
-
-        main_layout.add_widget(self.left_layout)
-        main_layout.add_widget(self.right_layout)
-
-        self.play_song()
-        Clock.schedule_interval(self.check_reminders, 30)
-
-        final_layout = BoxLayout(orientation='vertical')
-        final_layout.add_widget(self.title_layout)
-        final_layout.add_widget(main_layout)
-
-        Window.bind(on_resize=self.update_font_sizes)
-        self.update_font_sizes(Window, Window.width, Window.height)
-        return final_layout
+        self.root.mainloop()
 
     def _load_reminder_configs(self):
         try:
             return reminders.load_reminders()
-        except (OSError, ValueError, KeyError) as e:
-            print(f"Could not load reminders.json, using defaults: {e}")
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"Could not load reminders.json, using defaults: {exc}")
             return reminders.build_fallback_reminders()
+
+    def _build_ui(self):
+        self.main = ttk.Frame(self.root, padding=24)
+        self.main.pack(fill="both", expand=True)
+        self.main.configure(style="Main.TFrame")
+
+        self.header = tk.Frame(self.main, bg="#1f4e7a", height=120)
+        self.header.pack(fill="x", pady=(0, 18))
+        self.header.pack_propagate(False)
+
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "images", "dog-training.png")
+        self.header_icon = self._load_image(icon_path, (70, 70))
+        tk.Label(self.header, image=self.header_icon, bg="#1f4e7a").place(x=24, y=24)
+
+        tk.Label(
+            self.header,
+            text="Care Companion",
+            fg="white",
+            bg="#1f4e7a",
+            font=("Segoe UI", 24, "bold"),
+        ).place(x=110, y=26)
+        tk.Label(
+            self.header,
+            text="Comfort, reminders, and daily support in one place",
+            fg="#e4f2ff",
+            bg="#1f4e7a",
+            font=("Segoe UI", 13),
+        ).place(x=110, y=66)
+
+        content = tk.Frame(self.main, bg="#f4f7fb")
+        content.pack(fill="both", expand=True)
+
+        left_panel = tk.Frame(content, bg="white", padx=20, pady=20)
+        left_panel.pack(side="left", fill="both", expand=True)
+
+        right_panel = tk.Frame(content, bg="#f8fbff", padx=20, pady=20)
+        right_panel.pack(side="right", fill="both", expand=False)
+        right_panel.configure(width=360)
+
+        tk.Label(
+            left_panel,
+            text="Daily care actions",
+            font=("Segoe UI", 20, "bold"),
+            fg="#243b53",
+            bg="white",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 6))
+        tk.Label(
+            left_panel,
+            text="Track sleep, log mood, and review your week.",
+            font=("Segoe UI", 13),
+            fg="#5b6f84",
+            bg="white",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 18))
+
+        self.sleep_label_var = tk.StringVar(value="Log your Sleep (1-10):")
+        tk.Label(left_panel, textvariable=self.sleep_label_var, fg="#243b53", bg="white", anchor="w", font=("Segoe UI", 13, "bold")).pack(fill="x", pady=(8, 4))
+        self.sleep_button = tk.Button(left_panel, text="Log Sleep", bg="#2b73c9", fg="white", relief="flat", padx=12, pady=10, command=self.log_sleep)
+        self.sleep_button.pack(fill="x", pady=(0, 12))
+
+        self.mood_label_var = tk.StringVar(value="Log your Mood (1-10):")
+        tk.Label(left_panel, textvariable=self.mood_label_var, fg="#243b53", bg="white", anchor="w", font=("Segoe UI", 13, "bold")).pack(fill="x", pady=(8, 4))
+        self.mood_button = tk.Button(left_panel, text="Log Mood", bg="#2b73c9", fg="white", relief="flat", padx=12, pady=10, command=self.log_mood)
+        self.mood_button.pack(fill="x", pady=(0, 12))
+
+        self.history_button = tk.Button(left_panel, text="View This Week", bg="#5c7b99", fg="white", relief="flat", padx=12, pady=10, command=self.show_week_history)
+        self.history_button.pack(fill="x", pady=(8, 0))
+
+        tk.Label(
+            right_panel,
+            text="Today’s reminder",
+            font=("Segoe UI", 20, "bold"),
+            fg="#243b53",
+            bg="#f8fbff",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 6))
+        tk.Label(
+            right_panel,
+            text="A calm, supportive check-in for the day.",
+            font=("Segoe UI", 13),
+            fg="#5b6f84",
+            bg="#f8fbff",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 18))
+
+        self.reminder_text_var = tk.StringVar(value=self._waiting_message())
+        self.reminder_message = tk.Label(
+            right_panel,
+            textvariable=self.reminder_text_var,
+            wraplength=300,
+            justify="left",
+            fg="#2f4156",
+            bg="#f8fbff",
+            anchor="nw",
+            font=("Segoe UI", 12),
+        )
+        self.reminder_message.pack(fill="both", expand=True, pady=(0, 18))
+
+        self.acknowledge_button = tk.Button(right_panel, text="Acknowledge", bg="#1f4e7a", fg="white", relief="flat", padx=12, pady=10, command=self.acknowledge_reminder)
+        self.acknowledge_button.pack(fill="x")
+
+        self.summary_text = tk.StringVar(value="")
+
+    def _load_image(self, path, size):
+        image = Image.open(path).convert("RGBA")
+        image = image.resize(size, Image.Resampling.LANCZOS)
+        return ImageTk.PhotoImage(image)
 
     def _waiting_message(self):
         next_times = ", ".join(r["time"] for r in self.reminder_configs[:3])
@@ -150,184 +157,134 @@ class HealthReminderApp(App):
             "Tap Acknowledge when you see a reminder."
         )
 
-    def _update_reminder_text_size(self, instance, value):
-        instance.text_size = (value[0], None)
+    def _refresh_status(self):
+        self.reminder_text_var.set(self._waiting_message())
 
-    def update_font_sizes(self, window, width, height):
-        base_font_size = width * 0.03
-        self.title_label.font_size = base_font_size * 1.5
-        self.reminder_message_label.font_size = base_font_size * 0.5
-        self.sleep_label.font_size = base_font_size
-        self.mood_label.font_size = base_font_size
-        self.acknowledge_button.font_size = base_font_size
-        self.sleep_button.font_size = base_font_size
-        self.mood_button.font_size = base_font_size
-        self.history_button.font_size = base_font_size
+    def _check_reminders_loop(self):
+        self.check_reminders()
+        self.root.after(30000, self._check_reminders_loop)
 
-    def update_background_rect(self, *args):
-        self.left_rect.pos = self.left_layout.pos
-        self.left_rect.size = self.left_layout.size
-
-    def update_right_background_rect(self, *args):
-        self.right_rect.pos = self.right_layout.pos
-        self.right_rect.size = self.right_layout.size
-
-    def update_title_background_rect(self, *args):
-        self.title_rect.pos = self.title_layout.pos
-        self.title_rect.size = self.title_layout.size
-
-    def check_reminders(self, dt):
+    def check_reminders(self):
         if self.active_reminder:
             return
-
         due = storage.get_due_reminders(self.reminder_configs)
         if due:
             self.active_reminder = due[0]
-            self.reminder_message_label.text = self.active_reminder["text"]
+            self.reminder_text_var.set(self.active_reminder["text"])
 
-    def acknowledge_reminder(self, instance):
+    def acknowledge_reminder(self):
         if self.active_reminder:
             storage.mark_reminder_shown(self.active_reminder["id"])
             self.active_reminder = None
-        self.reminder_message_label.text = self._waiting_message()
+        self.reminder_text_var.set(self._waiting_message())
 
-    def show_week_history(self, instance):
-        summary = storage.format_weekly_summary(days=7)
-        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+    def log_sleep(self):
+        self._prompt_for_rating("Log Sleep", "Enter your sleep rating (1-10):", self.store_sleep)
 
-        scroll = ScrollView(size_hint=(1, 0.85))
-        label = Label(
-            text=summary,
-            size_hint_y=None,
-            halign="left",
-            valign="top",
-        )
-        label.bind(texture_size=self._set_label_height)
-        label.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
-        scroll.add_widget(label)
+    def log_mood(self):
+        self._prompt_for_rating("Log Mood", "Enter your mood rating (1-10):", self.evaluate_mood)
 
-        close_btn = Button(text="Close", size_hint=(1, 0.15))
-        content.add_widget(scroll)
-        content.add_widget(close_btn)
+    def _prompt_for_rating(self, title, prompt_text, callback):
+        popup = tk.Toplevel(self.root)
+        popup.title(title)
+        popup.transient(self.root)
+        popup.grab_set()
+        popup.configure(padx=18, pady=18, bg="white")
+        popup.geometry("360x180")
 
-        popup = Popup(title="This Week", content=content, size_hint=(0.85, 0.7), auto_dismiss=True)
-        close_btn.bind(on_press=popup.dismiss)
-        popup.open()
+        tk.Label(popup, text=prompt_text, bg="white", font=("Segoe UI", 12), anchor="w").pack(fill="x", pady=(0, 10))
+        entry = ttk.Entry(popup, width=24)
+        entry.pack(fill="x", pady=(0, 12))
+        entry.focus_set()
 
-    def _set_label_height(self, instance, texture_size):
-        instance.height = texture_size[1]
+        def submit():
+            callback(entry.get())
+            popup.destroy()
 
-    def play_song(self):
-        sound = SoundLoader.load('assets/audio/Rachel Platten - Fight Song.mp3')
-        if sound:
-            sound.volume = 1.0
-            sound.play()
+        ttk.Button(popup, text="Save", command=submit).pack(anchor="e")
+        popup.bind("<Return>", lambda event: submit())
 
-    def log_sleep(self, instance):
-        self.show_popup("Log Sleep", "Enter your sleep rating (1-10):", self.store_sleep)
-
-    def log_mood(self, instance):
-        self.show_popup("Log Mood", "Enter your mood rating (1-10):", self.evaluate_mood)
-
-    def show_popup(self, title, message, on_submit):
-        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        label = Label(text=message, size_hint=(1, 0.6))
-        text_input = TextInput(multiline=False, size_hint=(1, 0.4))
-
-        popup = Popup(title=title, content=content, size_hint=(0.8, 0.5), auto_dismiss=True)
-
-        def on_button_press(instance):
-            on_submit(text_input.text)
-            popup.dismiss()
-
-        button = Button(text="Submit", size_hint=(1, 0.3))
-        button.bind(on_press=on_button_press)
-
-        content.add_widget(label)
-        content.add_widget(text_input)
-        content.add_widget(button)
-        popup.open()
-
-    def revert_mood_label(self, dt):
-        self.mood_label.text = "Log your Mood (1-10):"
-
-    def evaluate_mood(self, mood_value):
-        try:
-            mood = int(mood_value)
-            if not 1 <= mood <= 10:
-                raise ValueError
-
-            storage.save_log("mood", mood)
-            self.mood_label.text = f"Logged Mood: {mood} (saved)"
-            Clock.schedule_once(self.revert_mood_label, 2)
-
-            if mood < 6:
-                self.send_sms_via_email('verizon', f"Mood rating is low: {mood}. Check in with her.", "248-318-8361")
-                self.reminder_message_label.text = f"Mood {mood}: saved and message sent to Sara"
-            elif mood < 8:
-                self.reminder_message_label.text = "Mood saved. Call your daughter — she'd love to spend time with you"
-            else:
-                self.reminder_message_label.text = "Mood saved. I'm happy you're in a good mood"
-
-        except ValueError:
-            self.reminder_message_label.text = "Invalid mood rating. Enter a whole number from 1 to 10."
-
-    def revert_sleep_label(self, dt):
-        self.sleep_label.text = "Log your Sleep (1-10):"
+    def revert_sleep_label(self):
+        self.sleep_label_var.set("Log your Sleep (1-10):")
 
     def store_sleep(self, sleep_value):
         try:
             sleep = int(sleep_value)
             if not 1 <= sleep <= 10:
                 raise ValueError
-
             storage.save_log("sleep", sleep)
-            self.sleep_label.text = f"Logged Sleep: {sleep} (saved)"
-            Clock.schedule_once(self.revert_sleep_label, 2)
-
-            if sleep < 6:
-                self.reminder_message_label.text = "Sleep saved. Call Sara — she might be able to help you sleep"
-            elif sleep < 8:
-                self.reminder_message_label.text = "Sleep saved. You might need more rest — consider your sleep routine."
-            else:
-                self.reminder_message_label.text = "Sleep saved. Great — keep up the good sleep habits!"
-
+            self.sleep_label_var.set(f"Logged Sleep: {sleep} (saved)")
+            self.reminder_text_var.set("Sleep saved. Great — keep up the good sleep habits!")
+            self.root.after(2000, self.revert_sleep_label)
         except ValueError:
-            self.reminder_message_label.text = "Invalid sleep rating. Enter a whole number from 1 to 10."
+            self.reminder_text_var.set("Invalid sleep rating. Enter a whole number from 1 to 10.")
 
-    def send_sms_via_email(self, carrier, message, phone_number="248-318-8361"):
-        carrier_gateways = {
-            'verizon': 'vtext.com',
-            'att': 'txt.att.net',
-            'tmobile': 'tmomail.net',
-            'sprint': 'messaging.sprintpcs.com',
-        }
+    def revert_mood_label(self):
+        self.mood_label_var.set("Log your Mood (1-10):")
 
-        if carrier not in carrier_gateways:
-            print("Carrier not supported")
-            return
-
-        to_email = 'khuston@hotmail.com'
-        smtp_server = 'smtp.gmail.com'
-        smtp_port = 587
-        sender_email = os.environ.get('HEALTH_APP_EMAIL', 'shuston007@gmail.com')
-        sender_password = os.environ.get('HEALTH_APP_PASSWORD', '')
-
-        msg = MIMEText(message)
-        msg['From'] = sender_email
-        msg['To'] = to_email
-        msg['Subject'] = 'Health Reminder'
-
+    def evaluate_mood(self, mood_value):
         try:
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            server.starttls()
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, [to_email], msg.as_string())
-            server.quit()
-            print("SMS sent successfully")
-        except Exception as e:
-            print(f"Failed to send SMS: {e}")
+            mood = int(mood_value)
+            if not 1 <= mood <= 10:
+                raise ValueError
+            storage.save_log("mood", mood)
+            self.mood_label_var.set(f"Logged Mood: {mood} (saved)")
+            self.reminder_text_var.set("Mood saved. I’m happy you’re in a good mood")
+            self.root.after(2000, self.revert_mood_label)
+        except ValueError:
+            self.reminder_text_var.set("Invalid mood rating. Enter a whole number from 1 to 10.")
+
+    def show_week_history(self):
+        summary = storage.format_weekly_summary(days=7)
+        popup = tk.Toplevel(self.root)
+        popup.title("This Week")
+        popup.transient(self.root)
+        popup.configure(bg="white")
+        popup.geometry("520x420")
+
+        text_widget = tk.Text(popup, wrap="word", padx=12, pady=12, bg="white", fg="#243b53")
+        text_widget.insert("1.0", summary)
+        text_widget.configure(state="disabled")
+        text_widget.pack(fill="both", expand=True)
+
+    def on_close(self):
+        self.root.destroy()
+
+    def _run_demo_sequence(self):
+        output_dir = os.path.join(os.path.dirname(__file__), "demo_output")
+        os.makedirs(output_dir, exist_ok=True)
+
+        self._save_preview(os.path.join(output_dir, "demo_capture_1.png"), "Welcome", self._waiting_message())
+        self.sleep_label_var.set("Logged Sleep: 8 (saved)")
+        self.mood_label_var.set("Logged Mood: 7 (saved)")
+        self.reminder_text_var.set("Mood saved. I’m happy you’re in a good mood")
+        self._save_preview(os.path.join(output_dir, "demo_capture_2.png"), "Daily log", "Sleep: 8 | Mood: 7")
+
+        summary = storage.format_weekly_summary(days=7)
+        self._save_preview(os.path.join(output_dir, "demo_capture_3.png"), "This Week", summary)
+        self.root.after(500, self.root.destroy)
+
+    def _save_preview(self, path, title, body):
+        img = Image.new("RGB", (1400, 900), "#f4f7fb")
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle((40, 40, 1360, 860), radius=28, fill="#ffffff", outline="#dfe7f2", width=2)
+        draw.rounded_rectangle((60, 60, 1340, 180), radius=24, fill="#1f4e7a")
+        draw.text((95, 90), "Care Companion", fill="white", font=ImageFont.load_default(size=40) if hasattr(ImageFont, "load_default") else ImageFont.load_default())
+        draw.text((95, 130), "Comfort, reminders, and daily support in one place", fill="#e8f3ff")
+        draw.rounded_rectangle((80, 230, 620, 720), radius=24, fill="#ffffff", outline="#e1e8f2")
+        draw.rounded_rectangle((700, 230, 1320, 720), radius=24, fill="#f8fbff", outline="#e1e8f2")
+        draw.text((110, 270), title, fill="#243b53")
+        draw.text((110, 320), body.replace("\n", "\n"), fill="#4b5e72")
+        img.save(path)
+        print(f"Saved preview image: {path}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Health reminder app")
+    parser.add_argument("--demo", action="store_true", help="Generate a polished demo preview screenshot and exit")
+    args = parser.parse_args()
+    HealthReminderApp(demo_mode=args.demo)
 
 
 if __name__ == "__main__":
-    HealthReminderApp().run()
+    main()
